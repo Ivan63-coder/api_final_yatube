@@ -1,8 +1,12 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, permissions, viewsets
+from rest_framework import filters, mixins, viewsets
 from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.permissions import (
+    IsAuthenticated,
+    IsAuthenticatedOrReadOnly
+)
 
-from posts.models import Follow, Group, Post
+from posts.models import Group, Post
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     CommentSerializer,
@@ -13,12 +17,11 @@ from .serializers import (
 
 class CommentViewSet(viewsets.ModelViewSet):
     serializer_class = CommentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
-    pagination_class = LimitOffsetPagination
+    permission_classes = (IsOwnerOrReadOnly, IsAuthenticatedOrReadOnly)
 
     def get_queryset(self):
         post = get_object_or_404(Post, pk=self.kwargs.get('post_id'))
-        return post.comments
+        return post.comments.all()
 
     def perform_create(self, serializer):
         post = get_object_or_404(Post, pk=self.kwargs.get('post_id'))
@@ -28,22 +31,24 @@ class CommentViewSet(viewsets.ModelViewSet):
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
+    permission_classes = (IsAuthenticatedOrReadOnly,)
 
 
 class PostViewSet(viewsets.ModelViewSet):
-    queryset = Post.objects.all()
+    queryset = Post.objects.select_related('author', 'group')
     serializer_class = PostSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    permission_classes = (IsOwnerOrReadOnly, IsAuthenticatedOrReadOnly)
     pagination_class = LimitOffsetPagination
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
 
-class FollowViewSet(viewsets.ModelViewSet):
-    queryset = Follow.objects.all()
+class FollowViewSet(viewsets.GenericViewSet,
+                    mixins.ListModelMixin,
+                    mixins.CreateModelMixin):
     serializer_class = FollowSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsAuthenticated,)
     filter_backends = (filters.SearchFilter,)
     search_fields = ('following__username',)
 
